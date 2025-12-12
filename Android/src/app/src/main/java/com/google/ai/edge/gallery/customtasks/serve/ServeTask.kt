@@ -22,11 +22,11 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
+import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.ui.llmchat.LlmChatModelHelper
-import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,12 +77,7 @@ class ServeTask @Inject constructor() : CustomTask {
 
   @Composable
   override fun MainScreen(data: Any) {
-    // We expect data to contain ModelManagerViewModel
-    // In GalleryNavGraph, it passes CustomTaskData or CustomTaskDataForBuiltinTask
-    // But since this is a custom task, it will be CustomTaskData.
-
-    // However, looking at GalleryNavGraph, it passes CustomTaskData which has modelManagerViewModel.
-
-    ServeTaskScreen()
+    val customTaskData = data as CustomTaskData
+    ServeTaskScreen(modelManagerViewModel = customTaskData.modelManagerViewModel)
   }
 }
