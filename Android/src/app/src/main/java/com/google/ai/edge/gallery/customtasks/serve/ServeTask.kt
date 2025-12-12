@@ -55,8 +55,8 @@ class ServeTask @Inject constructor() : CustomTask {
         LlmChatModelHelper.initialize(
           context = context,
           model = model,
-          supportImage = false, // Serve usually text-only or multimodal later
-          supportAudio = false,
+          supportImage = model.llmSupportImage,
+          supportAudio = model.llmSupportAudio,
           onDone = onDone
         )
       } catch (e: Exception) {

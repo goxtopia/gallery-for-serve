@@ -16,6 +16,9 @@
 
 package com.google.ai.edge.gallery.customtasks.serve
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
@@ -89,10 +92,33 @@ class OpenAIServer(
             // For now, let's just take the last message content.
 
             var prompt = ""
+            val images = mutableListOf<Bitmap>()
+
             for (i in 0 until messages.length()) {
                 val message = messages.getJSONObject(i)
                 if (message.getString("role") == "user") {
-                    prompt = message.getString("content")
+                    val content = message.get("content")
+                    if (content is String) {
+                        prompt = content
+                    } else if (content is JSONArray) {
+                        for (j in 0 until content.length()) {
+                            val item = content.getJSONObject(j)
+                            val type = item.getString("type")
+                            if (type == "text") {
+                                prompt += item.getString("text")
+                            } else if (type == "image_url") {
+                                val imageUrl = item.getJSONObject("image_url").getString("url")
+                                if (imageUrl.startsWith("data:image")) {
+                                    val base64Image = imageUrl.substringAfter("base64,")
+                                    val decodedString = Base64.decode(base64Image, Base64.DEFAULT)
+                                    val bitmap = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.size)
+                                    if (bitmap != null) {
+                                        images.add(bitmap)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -120,7 +146,7 @@ class OpenAIServer(
                    // Note: `generateResponse` implementation in ServeTaskViewModel assumes `message.toString()` is delta.
                    // If it is full text, we might get duplication. But for now we stick with append.
 
-                   responseContent = serveTaskViewModel.generateResponse(model, prompt) { partial ->
+                   responseContent = serveTaskViewModel.generateResponse(model, prompt, images) { partial ->
                        // We could optionally log partial results or stream them if we supported streaming
                    }
 
