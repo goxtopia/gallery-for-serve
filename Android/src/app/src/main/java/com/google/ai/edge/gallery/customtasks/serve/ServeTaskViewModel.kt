@@ -73,9 +73,11 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (server != null) {
-                   stopServer()
+                   server?.stop()
+                   server = null
                 }
-                server = OpenAIServer(port, modelManagerViewModel, this, this@ServeTaskViewModel)
+                // Pass viewModelScope to server so it can launch inference jobs that survive beyond this launch block
+                server = OpenAIServer(port, modelManagerViewModel, viewModelScope, this@ServeTaskViewModel)
                 server?.start()
                 _uiState.update {
                     it.copy(
