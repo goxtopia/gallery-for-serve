@@ -43,6 +43,8 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Collections
 import java.util.concurrent.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class ServeTaskUiState(
     val isServerRunning: Boolean = false,
@@ -57,6 +59,7 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
     val uiState = _uiState.asStateFlow()
 
     private var server: OpenAIServer? = null
+    private val mutex = Mutex()
 
     fun toggleServer(
         context: Context,
@@ -158,7 +161,7 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
         images: List<Bitmap> = emptyList(),
         maxTokens: Int = -1,
         onPartialResult: (String) -> Unit
-    ): String {
+    ): String = mutex.withLock {
         val startTs = System.currentTimeMillis()
         addLog("Request received. Max tokens: $maxTokens")
 
@@ -171,6 +174,13 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
             }
             kotlinx.coroutines.delay(100)
         }
+
+        // Reset conversation to avoid state accumulation
+        LlmChatModelHelper.resetConversation(
+            model = model,
+            supportImage = model.llmSupportImage,
+            supportAudio = model.llmSupportAudio
+        )
 
         val instance = model.instance as LlmModelInstance
         val conversation = instance.conversation
