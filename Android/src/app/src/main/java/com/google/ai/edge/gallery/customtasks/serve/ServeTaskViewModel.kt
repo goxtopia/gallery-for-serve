@@ -39,6 +39,9 @@ import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.gallery.ui.llmchat.LlmModelInstance
 import java.io.ByteArrayOutputStream
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Collections
 import java.util.concurrent.CancellationException
 
 data class ServeTaskUiState(
@@ -81,18 +84,37 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
                 // Pass viewModelScope to server so it can launch inference jobs that survive beyond this launch block
                 server = OpenAIServer(port, modelManagerViewModel, viewModelScope, this@ServeTaskViewModel)
                 server?.start()
+
+                val ipAddress = getIpAddress() ?: "localhost"
                 _uiState.update {
                     it.copy(
                         isServerRunning = true,
                         port = port,
-                        serverAddress = "http://localhost:$port" // Android emulator/device localhost
+                        serverAddress = "http://$ipAddress:$port"
                     )
                 }
-                addLog("Server started on port $port")
+                addLog("Server started on $ipAddress:$port")
             } catch (e: Exception) {
                 addLog("Error starting server: ${e.message}")
             }
         }
+    }
+
+    private fun getIpAddress(): String? {
+        try {
+            val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
+            for (intf in interfaces) {
+                val addrs = Collections.list(intf.inetAddresses)
+                for (addr in addrs) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        return addr.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ServeTaskViewModel", "Error getting IP", e)
+        }
+        return null
     }
 
     override fun onCleared() {

@@ -80,8 +80,13 @@ class OpenAIServer(
                 val contentLength = contentLengthStr.toInt()
                 if (contentLength > 0) {
                     val buffer = ByteArray(contentLength)
-                    session.inputStream.read(buffer, 0, contentLength)
-                    jsonString = String(buffer, Charsets.UTF_8)
+                    var bytesRead = 0
+                    while (bytesRead < contentLength) {
+                        val count = session.inputStream.read(buffer, bytesRead, contentLength - bytesRead)
+                        if (count == -1) break
+                        bytesRead += count
+                    }
+                    jsonString = String(buffer, 0, bytesRead, Charsets.UTF_8)
                 }
             } else {
                 // Fallback to parseBody if content-length is missing or invalid
@@ -113,27 +118,35 @@ class OpenAIServer(
             var prompt = ""
             val images = mutableListOf<Bitmap>()
 
-            for (i in 0 until messages.length()) {
+            // Only process the last user message to avoid duplicating context in the stateful backend
+            var lastUserMessageIndex = -1
+            for (i in messages.length() - 1 downTo 0) {
                 val message = messages.getJSONObject(i)
                 if (message.getString("role") == "user") {
-                    val content = message.get("content")
-                    if (content is String) {
-                        prompt = content
-                    } else if (content is JSONArray) {
-                        for (j in 0 until content.length()) {
-                            val item = content.getJSONObject(j)
-                            val type = item.getString("type")
-                            if (type == "text") {
-                                prompt += item.getString("text")
-                            } else if (type == "image_url") {
-                                val imageUrl = item.getJSONObject("image_url").getString("url")
-                                if (imageUrl.startsWith("data:image")) {
-                                    val base64Image = imageUrl.substringAfter("base64,")
-                                    val decodedString = Base64.decode(base64Image, Base64.DEFAULT)
-                                    val bitmap = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.size)
-                                    if (bitmap != null) {
-                                        images.add(bitmap)
-                                    }
+                    lastUserMessageIndex = i
+                    break
+                }
+            }
+
+            if (lastUserMessageIndex != -1) {
+                val message = messages.getJSONObject(lastUserMessageIndex)
+                val content = message.get("content")
+                if (content is String) {
+                    prompt = content
+                } else if (content is JSONArray) {
+                    for (j in 0 until content.length()) {
+                        val item = content.getJSONObject(j)
+                        val type = item.getString("type")
+                        if (type == "text") {
+                            prompt += item.getString("text")
+                        } else if (type == "image_url") {
+                            val imageUrl = item.getJSONObject("image_url").getString("url")
+                            if (imageUrl.startsWith("data:image")) {
+                                val base64Image = imageUrl.substringAfter("base64,")
+                                val decodedString = Base64.decode(base64Image, Base64.DEFAULT)
+                                val bitmap = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.size)
+                                if (bitmap != null) {
+                                    images.add(bitmap)
                                 }
                             }
                         }
