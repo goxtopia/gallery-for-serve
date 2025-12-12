@@ -1,5 +1,10 @@
 # Google AI Edge Gallery ✨
 
+## **This is a mod version that support a simple OpenAI-compatible server**
+1. Setup your hf access token
+2. Go to experimental/Serve
+3. Download a multi model LM and switch to GPU (recommend), then start a server and try it yourself!
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/google-ai-edge/gallery)](https://github.com/google-ai-edge/gallery/releases)
 
