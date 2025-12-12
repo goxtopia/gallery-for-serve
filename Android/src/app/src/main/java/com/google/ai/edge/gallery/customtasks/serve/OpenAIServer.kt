@@ -28,6 +28,9 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import java.io.PrintWriter
 import java.util.UUID
 
 class OpenAIServer(
@@ -84,6 +87,7 @@ class OpenAIServer(
             val jsonBody = JSONObject(jsonString)
             val messages = jsonBody.getJSONArray("messages")
             val modelName = jsonBody.optString("model", "default-model")
+            val isStream = jsonBody.optBoolean("stream", false)
 
             // Extract the last user message. Simple implementation.
             // A real implementation would handle conversation history.
@@ -122,82 +126,117 @@ class OpenAIServer(
                 }
             }
 
-            // We need to run the inference. Since serve is called on a worker thread by NanoHTTPD,
-            // we can block here or use a latch. But we need to call suspend function generateResponse
-            // from ModelManagerViewModel.
-
-            var responseContent = ""
-            var error: String? = null
-
-            // Blocking call to get response
-            val job = scope.launch(Dispatchers.IO) {
-               try {
-                   // Ensure model is selected
-                   val model = modelManagerViewModel.uiState.value.selectedModel
-                   if (model.name.isEmpty()) {
-                       error = "No model selected"
-                       return@launch
-                   }
-
-                   // We use the ServeTaskViewModel to generate response as it has access to the internal LlmModelInstance logic
-                   // tailored for string return.
-                   // Note: `generateResponse` in ServeTaskViewModel is suspending.
-
-                   // Note: `generateResponse` implementation in ServeTaskViewModel assumes `message.toString()` is delta.
-                   // If it is full text, we might get duplication. But for now we stick with append.
-
-                   responseContent = serveTaskViewModel.generateResponse(model, prompt, images) { partial ->
-                       // We could optionally log partial results or stream them if we supported streaming
-                   }
-
-               } catch (e: Exception) {
-                   error = e.message
-                   Log.e(TAG, "Inference error", e)
-               }
-            }
-
-            // Wait for job to complete.
-            while (!job.isCompleted) {
-                Thread.sleep(100)
-            }
-
-            if (error != null) {
-                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Error: $error")
+            // Ensure model is selected
+            val model = modelManagerViewModel.uiState.value.selectedModel
+            if (model.name.isEmpty()) {
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Error: No model selected")
             }
 
             val responseId = "chatcmpl-" + UUID.randomUUID().toString()
             val created = System.currentTimeMillis() / 1000
 
-            val choice = JSONObject()
-            choice.put("index", 0)
-            val message = JSONObject()
-            message.put("role", "assistant")
-            message.put("content", responseContent)
-            choice.put("message", message)
-            choice.put("finish_reason", "stop")
+            if (isStream) {
+                val pipedInputStream = PipedInputStream()
+                val pipedOutputStream = PipedOutputStream(pipedInputStream)
+                val writer = PrintWriter(pipedOutputStream)
 
-            val choices = JSONArray()
-            choices.put(choice)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        serveTaskViewModel.generateResponse(model, prompt, images) { partialText ->
+                            val chunk = createOpenAIChunk(responseId, created, modelName, partialText)
+                            writer.print("data: $chunk\n\n")
+                            writer.flush()
+                        }
+                        writer.print("data: [DONE]\n\n")
+                        writer.flush()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Streaming error", e)
+                    } finally {
+                        writer.close()
+                    }
+                }
 
-            val response = JSONObject()
-            response.put("id", responseId)
-            response.put("object", "chat.completion")
-            response.put("created", created)
-            response.put("model", modelName)
-            response.put("choices", choices)
+                val response = newChunkedResponse(Response.Status.OK, "text/event-stream", pipedInputStream)
+                response.addHeader("Cache-Control", "no-cache")
+                return response
+            } else {
+                // Non-streaming
+                var responseContent = ""
+                var error: String? = null
 
-             // Usage stats (fake for now)
-            val usage = JSONObject()
-            usage.put("prompt_tokens", prompt.length / 4) // Rough estimate
-            usage.put("completion_tokens", responseContent.length / 4)
-            usage.put("total_tokens", (prompt.length + responseContent.length) / 4)
-            response.put("usage", usage)
+                // Blocking call to get response
+                val job = scope.launch(Dispatchers.IO) {
+                   try {
+                       responseContent = serveTaskViewModel.generateResponse(model, prompt, images) { partial ->
+                           // Ignore partial results
+                       }
+                   } catch (e: Exception) {
+                       error = e.message
+                       Log.e(TAG, "Inference error", e)
+                   }
+                }
 
-            return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+                // Wait for job to complete.
+                while (!job.isCompleted) {
+                    Thread.sleep(100)
+                }
+
+                if (error != null) {
+                    return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Error: $error")
+                }
+
+                val choice = JSONObject()
+                choice.put("index", 0)
+                val message = JSONObject()
+                message.put("role", "assistant")
+                message.put("content", responseContent)
+                choice.put("message", message)
+                choice.put("finish_reason", "stop")
+
+                val choices = JSONArray()
+                choices.put(choice)
+
+                val response = JSONObject()
+                response.put("id", responseId)
+                response.put("object", "chat.completion")
+                response.put("created", created)
+                response.put("model", modelName)
+                response.put("choices", choices)
+
+                 // Usage stats (fake for now)
+                val usage = JSONObject()
+                usage.put("prompt_tokens", prompt.length / 4) // Rough estimate
+                usage.put("completion_tokens", responseContent.length / 4)
+                usage.put("total_tokens", (prompt.length + responseContent.length) / 4)
+                response.put("usage", usage)
+
+                return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing request", e)
              return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Bad Request: " + e.message)
         }
+    }
+
+    private fun createOpenAIChunk(id: String, created: Long, model: String, content: String): String {
+        val choice = JSONObject()
+        choice.put("index", 0)
+        val delta = JSONObject()
+        delta.put("content", content)
+        choice.put("delta", delta)
+        choice.put("finish_reason", JSONObject.NULL)
+
+        val choices = JSONArray()
+        choices.put(choice)
+
+        val chunk = JSONObject()
+        chunk.put("id", id)
+        chunk.put("object", "chat.completion.chunk")
+        chunk.put("created", created)
+        chunk.put("model", model)
+        chunk.put("choices", choices)
+
+        return chunk.toString()
     }
 }
