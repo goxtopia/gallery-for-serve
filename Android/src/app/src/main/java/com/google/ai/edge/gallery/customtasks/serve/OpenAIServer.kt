@@ -27,10 +27,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedWriter
 import java.io.IOException
+import java.io.OutputStreamWriter
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
-import java.io.PrintWriter
 import java.util.UUID
 
 class OpenAIServer(
@@ -136,23 +137,35 @@ class OpenAIServer(
             val created = System.currentTimeMillis() / 1000
 
             if (isStream) {
-                val pipedInputStream = PipedInputStream()
+                val pipeSize = 1024 * 1024 // 1MB buffer
+                val pipedInputStream = PipedInputStream(pipeSize)
                 val pipedOutputStream = PipedOutputStream(pipedInputStream)
-                val writer = PrintWriter(pipedOutputStream)
+                val writer = BufferedWriter(OutputStreamWriter(pipedOutputStream, "UTF-8"))
 
                 scope.launch(Dispatchers.IO) {
                     try {
                         serveTaskViewModel.generateResponse(model, prompt, images) { partialText ->
                             val chunk = createOpenAIChunk(responseId, created, modelName, partialText)
-                            writer.print("data: $chunk\n\n")
+                            writer.write("data: $chunk\n\n")
                             writer.flush()
                         }
-                        writer.print("data: [DONE]\n\n")
+                        writer.write("data: [DONE]\n\n")
                         writer.flush()
                     } catch (e: Exception) {
                         Log.e(TAG, "Streaming error", e)
+                        // Try to write error if possible
+                        try {
+                            val errorChunk = JSONObject()
+                            errorChunk.put("error", e.message)
+                            writer.write("data: $errorChunk\n\n")
+                            writer.flush()
+                        } catch (ign: Exception) {}
                     } finally {
-                        writer.close()
+                        try {
+                            writer.close()
+                        } catch (e: IOException) {
+                            Log.e(TAG, "Error closing writer", e)
+                        }
                     }
                 }
 

@@ -172,12 +172,14 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
                     }
 
                     override fun onDone() {
+                        Log.d("ServeTaskViewModel", "onDone")
                         if (continuation.isActive) {
                              continuation.resumeWith(Result.success(sb.toString()))
                         }
                     }
 
                     override fun onError(throwable: Throwable) {
+                         Log.e("ServeTaskViewModel", "onError", throwable)
                          if (continuation.isActive) {
                              continuation.resumeWith(Result.failure(throwable))
                          }
