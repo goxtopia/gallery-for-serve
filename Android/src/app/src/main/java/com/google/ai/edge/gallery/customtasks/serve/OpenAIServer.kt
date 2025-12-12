@@ -27,11 +27,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedWriter
 import java.io.IOException
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
-import java.io.PrintWriter
+import java.io.OutputStreamWriter
 import java.util.UUID
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.TimeUnit
+import java.io.InputStream
 
 class OpenAIServer(
     private val port: Int,
@@ -69,16 +72,27 @@ class OpenAIServer(
     }
 
     private fun handleChatCompletion(session: IHTTPSession): Response {
-        val map = HashMap<String, String>()
+        var jsonString: String? = null
         try {
-            session.parseBody(map)
-        } catch (e: IOException) {
-            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Error: " + e.message)
-        } catch (e: ResponseException) {
-            return newFixedLengthResponse(e.status, MIME_PLAINTEXT, e.message)
+            // Check Content-Length
+            val contentLengthStr = session.headers["content-length"]
+            if (contentLengthStr != null) {
+                val contentLength = contentLengthStr.toInt()
+                if (contentLength > 0) {
+                    val buffer = ByteArray(contentLength)
+                    session.inputStream.read(buffer, 0, contentLength)
+                    jsonString = String(buffer, Charsets.UTF_8)
+                }
+            } else {
+                // Fallback to parseBody if content-length is missing or invalid
+                val map = HashMap<String, String>()
+                session.parseBody(map)
+                jsonString = map["postData"]
+            }
+        } catch (e: Exception) {
+             return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Error: " + e.message)
         }
 
-        val jsonString = map["postData"]
         if (jsonString == null) {
              return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Missing body")
         }
@@ -136,27 +150,75 @@ class OpenAIServer(
             val created = System.currentTimeMillis() / 1000
 
             if (isStream) {
-                val pipedInputStream = PipedInputStream()
-                val pipedOutputStream = PipedOutputStream(pipedInputStream)
-                val writer = PrintWriter(pipedOutputStream)
+                // Use BlockingQueue instead of PipedInputStream to avoid "Write end dead" issues
+                // and threading complexity.
+                val queue = ArrayBlockingQueue<ByteArray>(100)
+                val POISON_PILL = ByteArray(0)
 
                 scope.launch(Dispatchers.IO) {
                     try {
                         serveTaskViewModel.generateResponse(model, prompt, images) { partialText ->
                             val chunk = createOpenAIChunk(responseId, created, modelName, partialText)
-                            writer.print("data: $chunk\n\n")
-                            writer.flush()
+                            val data = "data: $chunk\n\n".toByteArray(Charsets.UTF_8)
+                            queue.put(data)
                         }
-                        writer.print("data: [DONE]\n\n")
-                        writer.flush()
+                        queue.put("data: [DONE]\n\n".toByteArray(Charsets.UTF_8))
                     } catch (e: Exception) {
                         Log.e(TAG, "Streaming error", e)
+                        try {
+                            val errorChunk = JSONObject()
+                            errorChunk.put("error", e.message)
+                            queue.put("data: $errorChunk\n\n".toByteArray(Charsets.UTF_8))
+                        } catch (ign: Exception) {}
                     } finally {
-                        writer.close()
+                        try {
+                            queue.put(POISON_PILL)
+                        } catch (e: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
                     }
                 }
 
-                val response = newChunkedResponse(Response.Status.OK, "text/event-stream", pipedInputStream)
+                val inputStream = object : InputStream() {
+                    private var buffer: ByteArray? = null
+                    private var pos = 0
+
+                    override fun read(): Int {
+                        val b = ByteArray(1)
+                        if (read(b, 0, 1) == -1) return -1
+                        return b[0].toInt() and 0xFF
+                    }
+
+                    override fun read(b: ByteArray, off: Int, len: Int): Int {
+                        if (buffer == null || pos >= buffer!!.size) {
+                            try {
+                                val data = queue.poll(30, TimeUnit.SECONDS)
+                                if (data == null) {
+                                    // Timeout
+                                    return -1
+                                }
+                                if (data.isEmpty()) {
+                                    // Poison pill / EOF
+                                    return -1
+                                }
+                                buffer = data
+                                pos = 0
+                            } catch (e: InterruptedException) {
+                                return -1
+                            }
+                        }
+
+                        if (buffer == null) return -1
+
+                        val available = buffer!!.size - pos
+                        val count = Math.min(len, available)
+                        System.arraycopy(buffer!!, pos, b, off, count)
+                        pos += count
+                        return count
+                    }
+                }
+
+                val response = newChunkedResponse(Response.Status.OK, "text/event-stream", inputStream)
                 response.addHeader("Cache-Control", "no-cache")
                 return response
             } else {
