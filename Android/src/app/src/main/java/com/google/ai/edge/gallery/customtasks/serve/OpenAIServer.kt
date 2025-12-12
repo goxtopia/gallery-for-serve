@@ -102,6 +102,7 @@ class OpenAIServer(
             val messages = jsonBody.getJSONArray("messages")
             val modelName = jsonBody.optString("model", "default-model")
             val isStream = jsonBody.optBoolean("stream", false)
+            val maxTokens = jsonBody.optInt("max_tokens", -1).takeIf { it > 0 } ?: jsonBody.optInt("max_completion_tokens", -1)
 
             // Extract the last user message. Simple implementation.
             // A real implementation would handle conversation history.
@@ -157,7 +158,7 @@ class OpenAIServer(
 
                 scope.launch(Dispatchers.IO) {
                     try {
-                        serveTaskViewModel.generateResponse(model, prompt, images) { partialText ->
+                        serveTaskViewModel.generateResponse(model, prompt, images, maxTokens) { partialText ->
                             val chunk = createOpenAIChunk(responseId, created, modelName, partialText)
                             val data = "data: $chunk\n\n".toByteArray(Charsets.UTF_8)
                             queue.put(data)
@@ -229,7 +230,7 @@ class OpenAIServer(
                 // Blocking call to get response
                 val job = scope.launch(Dispatchers.IO) {
                    try {
-                       responseContent = serveTaskViewModel.generateResponse(model, prompt, images) { partial ->
+                       responseContent = serveTaskViewModel.generateResponse(model, prompt, images, maxTokens) { partial ->
                            // Ignore partial results
                        }
                    } catch (e: Exception) {

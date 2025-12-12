@@ -134,8 +134,12 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
         model: Model,
         prompt: String,
         images: List<Bitmap> = emptyList(),
+        maxTokens: Int = -1,
         onPartialResult: (String) -> Unit
     ): String {
+        val startTs = System.currentTimeMillis()
+        addLog("Request received. Max tokens: $maxTokens")
+
         // Wait for model to be initialized with timeout
         val timeoutMs = 30000L // 30 seconds
         val startTime = System.currentTimeMillis()
@@ -157,22 +161,41 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
             contents.add(Content.Text(prompt))
         }
 
-        // We use a latch-like mechanism or suspendCoroutine to wait for result
-        // But here we can use a channel or just wait since we are in a suspend function
-
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             val sb = StringBuilder()
+            var firstTokenTs = 0L
+            var tokenCount = 0
+
             conversation.sendMessageAsync(
                 Message.of(contents),
                 object : MessageCallback {
                     override fun onMessage(message: Message) {
-                        // message.toString() returns partial/delta content in this context
-                         onPartialResult(message.toString())
-                         sb.append(message.toString())
+                        val content = message.toString()
+                        if (content.isNotEmpty()) {
+                            if (firstTokenTs == 0L) {
+                                firstTokenTs = System.currentTimeMillis()
+                            }
+                            tokenCount++
+
+                            // Check max tokens limit
+                            if (maxTokens > 0 && tokenCount > maxTokens) {
+                                conversation.cancelProcess()
+                                return
+                            }
+
+                            onPartialResult(content)
+                            sb.append(content)
+                        }
                     }
 
                     override fun onDone() {
-                        Log.d("ServeTaskViewModel", "onDone")
+                        val endTs = System.currentTimeMillis()
+                        val decodeTime = (endTs - firstTokenTs) / 1000f
+                        val prefillTime = (firstTokenTs - startTs) / 1000f
+                        val decodeSpeed = if (decodeTime > 0) tokenCount / decodeTime else 0f
+
+                        addLog("Request processed. Tokens: $tokenCount. Prefill: ${"%.2f".format(prefillTime)}s. Decode: ${"%.2f".format(decodeSpeed)} t/s")
+
                         if (continuation.isActive) {
                              continuation.resumeWith(Result.success(sb.toString()))
                         }
@@ -180,8 +203,13 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
 
                     override fun onError(throwable: Throwable) {
                          Log.e("ServeTaskViewModel", "onError", throwable)
+                         addLog("Request failed: ${throwable.message}")
                          if (continuation.isActive) {
-                             continuation.resumeWith(Result.failure(throwable))
+                             if (throwable is CancellationException) {
+                                 continuation.resumeWith(Result.success(sb.toString()))
+                             } else {
+                                 continuation.resumeWith(Result.failure(throwable))
+                             }
                          }
                     }
                 }
