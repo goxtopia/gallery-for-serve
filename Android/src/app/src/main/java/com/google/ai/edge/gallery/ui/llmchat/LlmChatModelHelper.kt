@@ -33,6 +33,8 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
@@ -51,6 +53,7 @@ object LlmChatModelHelper {
   // Indexed by model name.
   private val cleanUpListeners: MutableMap<String, CleanUpListener> = mutableMapOf()
 
+  @OptIn(ExperimentalApi::class) // opt-in experimental flags
   fun initialize(
     context: Context,
     model: Model,
@@ -59,6 +62,7 @@ object LlmChatModelHelper {
     onDone: (String) -> Unit,
     systemMessage: Message? = null,
     tools: List<Any> = listOf(),
+    enableConversationConstrainedDecoding: Boolean = false,
   ) {
     // Prepare options.
     val maxTokens =
@@ -100,6 +104,8 @@ object LlmChatModelHelper {
       val engine = Engine(engineConfig)
       engine.initialize()
 
+      ExperimentalFlags.enableConversationConstrainedDecoding =
+        enableConversationConstrainedDecoding
       val conversation =
         engine.createConversation(
           ConversationConfig(
@@ -113,6 +119,7 @@ object LlmChatModelHelper {
             tools = tools,
           )
         )
+      ExperimentalFlags.enableConversationConstrainedDecoding = false
       model.instance = LlmModelInstance(engine = engine, conversation = conversation)
     } catch (e: Exception) {
       onDone(cleanUpMediapipeTaskErrorMessage(e.message ?: "Unknown error"))
@@ -121,12 +128,14 @@ object LlmChatModelHelper {
     onDone("")
   }
 
+  @OptIn(ExperimentalApi::class) // opt-in experimental flags
   fun resetConversation(
     model: Model,
     supportImage: Boolean,
     supportAudio: Boolean,
     systemMessage: Message? = null,
     tools: List<Any> = listOf(),
+    enableConversationConstrainedDecoding: Boolean = false,
   ) {
     try {
       Log.d(TAG, "Resetting conversation for model '${model.name}'")
@@ -143,6 +152,8 @@ object LlmChatModelHelper {
       val shouldEnableAudio = supportAudio
       Log.d(TAG, "Enable image: $shouldEnableImage, enable audio: $shouldEnableAudio")
 
+      ExperimentalFlags.enableConversationConstrainedDecoding =
+        enableConversationConstrainedDecoding
       val newConversation =
         engine.createConversation(
           ConversationConfig(
@@ -156,6 +167,7 @@ object LlmChatModelHelper {
             tools = tools,
           )
         )
+      ExperimentalFlags.enableConversationConstrainedDecoding = false
       instance.conversation = newConversation
 
       Log.d(TAG, "Resetting done")

@@ -10,7 +10,7 @@
 
 **Explore, Experience, and Evaluate the Future of On-Device Generative AI with Google AI Edge.**
 
-The Google AI Edge Gallery is an experimental app that puts the power of cutting-edge Generative AI models directly into your hands, running entirely on your Android *(available now)* and iOS *(coming soon)* devices. Dive into a world of creative and practical AI use cases, all running locally, without needing an internet connection once the model is loaded. Experiment with different models, chat, ask questions with images and audio clip, explore prompts, and more!
+The Google AI Edge Gallery is an experimental app that puts the power of cutting-edge Generative AI models directly into your hands, running entirely on your Android *(available now)* and iOS *(available now via TestFlight)* devices. Dive into a world of creative and practical AI use cases, all running locally, without needing an internet connection once the model is loaded. Experiment with different models, chat, ask questions with images and audio clip, explore prompts, and more!
 
 Install the app today from Google Play
 
@@ -21,16 +21,34 @@ For users without Google Play access, install the apk from the [**latest release
 > [!IMPORTANT]
 > You must uninstall all previous versions of the app before installing this one. Past versions will no longer be working and supported.
 
-<img width="480" alt="01" src="https://github.com/user-attachments/assets/2a60c8d0-ef4e-4040-a948-fa73f6a622b4" />
-<img width="480" alt="02" src="https://github.com/user-attachments/assets/d155d458-b822-415d-9252-7e825fe8c9c0" />
-<img width="480" alt="03" src="https://github.com/user-attachments/assets/1977af6f-ee7e-41b3-aac1-a642c66c0058" />
-<img width="480" alt="04" src="https://github.com/user-attachments/assets/a48be969-f57e-4497-9ecf-8feb35f2ba71" />
-<img width="480" alt="05" src="https://github.com/user-attachments/assets/2a9679ea-f191-4ffd-87db-6726f7c1057d" />
+## iOS Testing via TestFlight
+
+We're excited to announce that the app is now available for testing on iOS through TestFlight! We invite you to be among the first to try it out and share your feedback.
+
+***How to Join***:
+
+- Follow this [**public invitation link**](https://testflight.apple.com/join/nAtSQKTF) to get access.
+
+- Availability: Access is on a first-come, first-served basis. TestFlight currently limits the number of testers to 10,000.
+  
+- Supported device models: iOS devices with at least 6GB of RAM.
+
+We appreciate your help with this early testing phase. Your feedback is invaluable as we work to improve the app. Once we've gathered and addressed all the feedback, we aim to officially launch on the App Store early 2026.
+
+<img width="480" alt="01" src="https://github.com/user-attachments/assets/09dbcf7e-a298-4063-920e-bfc88591f4a2" />
+<img width="480" alt="02" src="https://github.com/user-attachments/assets/e2986bba-f807-42e1-9d5e-a5a978fa97e9" />
+<img width="480" alt="03" src="https://github.com/user-attachments/assets/ad3aa9ab-e3b6-4a12-bbd4-885bb202aa0f" />
+<img width="480" alt="04" src="https://github.com/user-attachments/assets/6441e752-e5f5-4753-9611-fa0122cdae49" />
+<img width="480" alt="05" src="https://github.com/user-attachments/assets/a5ebcf15-640a-4c11-93ce-b92fe365f1a3" />
+<img width="480" alt="06" src="https://github.com/user-attachments/assets/973c7a66-1906-400e-8fac-ee9b13b21aa1" />
+<img width="480" alt="07" src="https://github.com/user-attachments/assets/d3227bc6-8d78-47a1-bbfa-93f009117882" />
 
 ## ✨ Core Features
 
 *   **📱 Run Locally, Fully Offline:** Experience the magic of GenAI without an internet connection. All processing happens directly on your device.
 *   **🤖 Choose Your Model:** Easily switch between different models from Hugging Face and compare their performance.
+*   **🌻 Tiny Garden**: Play an experimental and fully offline mini game that uses natural language to plant, water, and harvest flowers.
+*   **📳 Mobile Actions**: Use our [open-source recipe](https://github.com/google-gemini/gemma-cookbook/blob/main/FunctionGemma/%5BFunctionGemma%5DFinetune_FunctionGemma_270M_for_Mobile_Actions_with_Hugging_Face.ipynb) to learn model fine-tuning, then load it in app to unlock offline device controls.
 *   **🖼️ Ask Image:** Upload images and ask questions about them. Get descriptions, solve problems, or identify objects.
 *   **🎙️ Audio Scribe:** Transcribe an uploaded or recorded audio clip into text or translate it into another language.
 *   **✍️ Prompt Lab:** Summarize, rewrite, generate code, or use freeform prompts to explore single-turn LLM use cases.

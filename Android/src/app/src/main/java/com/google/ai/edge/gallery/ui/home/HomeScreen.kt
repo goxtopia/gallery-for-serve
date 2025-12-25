@@ -93,6 +93,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -106,6 +107,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.core.os.bundleOf
 import com.google.ai.edge.gallery.GalleryTopAppBar
 import com.google.ai.edge.gallery.R
@@ -114,6 +116,8 @@ import com.google.ai.edge.gallery.data.AppBarActionType
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
 import com.google.ai.edge.gallery.data.CategoryInfo
+import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.firebaseAnalytics
 import com.google.ai.edge.gallery.proto.ImportedModel
@@ -153,12 +157,12 @@ private val PREDEFINED_CATEGORY_ORDER = listOf(Category.LLM.id, Category.EXPERIM
 
 private val PREDEFINED_LLM_TASK_ORDER =
   listOf(
-    BuiltInTaskId.LLM_MOBILE_ACTIONS,
-    BuiltInTaskId.LLM_TINY_GARDEN,
     BuiltInTaskId.LLM_ASK_IMAGE,
     BuiltInTaskId.LLM_ASK_AUDIO,
-    BuiltInTaskId.LLM_PROMPT_LAB,
     BuiltInTaskId.LLM_CHAT,
+    BuiltInTaskId.LLM_PROMPT_LAB,
+    BuiltInTaskId.LLM_TINY_GARDEN,
+    BuiltInTaskId.LLM_MOBILE_ACTIONS,
   )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -179,6 +183,7 @@ fun HomeScreen(
   var showImportDialog by remember { mutableStateOf(false) }
   var showImportingDialog by remember { mutableStateOf(false) }
   var showTosDialog by remember { mutableStateOf(!tosViewModel.getIsTosAccepted()) }
+  var showMobileActionsChallengeDialog by remember { mutableStateOf(false) }
   val selectedLocalModelFileUri = remember { mutableStateOf<Uri?>(null) }
   val selectedImportedModelInfo = remember { mutableStateOf<ImportedModel?>(null) }
   val coroutineScope = rememberCoroutineScope()
@@ -426,7 +431,13 @@ fun HomeScreen(
                 sortedCategories = sortedCategories,
                 tasksByCategories = tasksByCategories,
                 enableAnimation = enableAnimation,
-                navigateToTaskScreen = navigateToTaskScreen,
+                navigateToTaskScreen = { task ->
+                  if (task.id == BuiltInTaskId.LLM_MOBILE_ACTIONS && task.models.isEmpty()) {
+                    showMobileActionsChallengeDialog = true
+                  } else {
+                    navigateToTaskScreen(task)
+                  }
+                },
               )
             }
 
@@ -456,6 +467,33 @@ fun HomeScreen(
       curThemeOverride = modelManagerViewModel.readThemeOverride(),
       modelManagerViewModel = modelManagerViewModel,
       onDismissed = { showSettingsDialog = false },
+    )
+  }
+
+  if (showMobileActionsChallengeDialog) {
+    MobileActionsChallengeDialog(
+      onDismiss = { showMobileActionsChallengeDialog = false },
+      onLoadModel = {
+        // Show file picker.
+        val intent =
+          Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            // Single select.
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+          }
+        filePickerLauncher.launch(intent)
+      },
+      onSendEmail = {
+        context.startActivity(
+          Intent(Intent.ACTION_SEND).apply {
+            data = "mailto:".toUri()
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Finetune FunctionGemma 270M for Mobile Actions")
+            putExtra(Intent.EXTRA_TEXT, "https://ai.google.dev/gemma/docs/mobile-actions")
+          }
+        )
+      },
     )
   }
 
@@ -507,6 +545,10 @@ fun HomeScreen(
   // Import dialog
   if (showImportDialog) {
     selectedLocalModelFileUri.value?.let { uri ->
+      // If it is from the Mobile Actions challenge flow.
+      val supportMobileActions = showMobileActionsChallengeDialog
+      showMobileActionsChallengeDialog = false
+
       ModelImportDialog(
         uri = uri,
         onDismiss = { showImportDialog = false },
@@ -515,6 +557,12 @@ fun HomeScreen(
           showImportDialog = false
           showImportingDialog = true
         },
+        defaultValues =
+          mapOf(
+            ConfigKeys.SUPPORT_MOBILE_ACTIONS to supportMobileActions,
+            ConfigKeys.DEFAULT_TEMPERATURE to
+              (if (supportMobileActions) 0.0f else DEFAULT_TEMPERATURE),
+          ),
       )
     }
   }
@@ -937,11 +985,21 @@ private fun TaskCard(
     ) {
       // Title and model count
       Column {
-        Text(
-          task.label,
-          color = MaterialTheme.colorScheme.onSurface,
-          style = MaterialTheme.typography.titleMedium,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text(
+            task.label,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+          )
+          if (task.experimental) {
+            Icon(
+              painter = painterResource(R.drawable.ic_experiment),
+              contentDescription = "Experimental",
+              modifier = Modifier.size(20.dp).padding(start = 4.dp),
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
         Text(
           curModelCountLabel,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
