@@ -190,64 +190,73 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
             contents.add(Content.Text(prompt))
         }
 
-        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-            val sb = StringBuilder()
-            var firstTokenTs = 0L
-            var tokenCount = 0
+        val result = try {
+            kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+                val sb = StringBuilder()
+                var firstTokenTs = 0L
+                var tokenCount = 0
 
-            conversation.sendMessageAsync(
-                Message.of(contents),
-                object : MessageCallback {
-                    override fun onMessage(message: Message) {
-                        val content = message.toString()
-                        if (content.isNotEmpty()) {
-                            if (firstTokenTs == 0L) {
-                                firstTokenTs = System.currentTimeMillis()
+                conversation.sendMessageAsync(
+                    Message.of(contents),
+                    object : MessageCallback {
+                        override fun onMessage(message: Message) {
+                            val content = message.toString()
+                            if (content.isNotEmpty()) {
+                                if (firstTokenTs == 0L) {
+                                    firstTokenTs = System.currentTimeMillis()
+                                }
+                                tokenCount++
+                                // Check max tokens limit
+                                if (maxTokens > 0 && tokenCount > maxTokens) {
+                                    conversation.cancelProcess()
+                                    return
+                                }
+                                onPartialResult(content)
+                                sb.append(content)
                             }
-                            tokenCount++
-                            // Check max tokens limit
-                            if (maxTokens > 0 && tokenCount > maxTokens) {
-                                conversation.cancelProcess()
-                                return
-                            }
-                            onPartialResult(content)
-                            sb.append(content)
                         }
-                    }
 
-                    override fun onDone() {
-                        val endTs = System.currentTimeMillis()
-                        val decodeTime = (endTs - firstTokenTs) / 1000f
-                        val prefillTime = (firstTokenTs - startTs) / 1000f
-                        val decodeSpeed = if (decodeTime > 0) tokenCount / decodeTime else 0f
-                        addLog("Request processed. Tokens: $tokenCount. Prefill: ${"%.2f".format(prefillTime)}s. Decode: ${"%.2f".format(decodeSpeed)} t/s")
+                        override fun onDone() {
+                            val endTs = System.currentTimeMillis()
+                            val decodeTime = (endTs - firstTokenTs) / 1000f
+                            val prefillTime = (firstTokenTs - startTs) / 1000f
+                            val decodeSpeed = if (decodeTime > 0) tokenCount / decodeTime else 0f
+                            addLog("Request processed. Tokens: $tokenCount. Prefill: ${"%.2f".format(prefillTime)}s. Decode: ${"%.2f".format(decodeSpeed)} t/s")
 
-                        // Reset conversation after done to release memory
-                        LlmChatModelHelper.resetConversation(
-                            model = model,
-                            supportImage = model.llmSupportImage,
-                            supportAudio = model.llmSupportAudio
-                        )
-
-                        if (continuation.isActive) {
-                             continuation.resumeWith(Result.success(sb.toString()))
-                        }
-                    }
-
-                    override fun onError(throwable: Throwable) {
-                         Log.e("ServeTaskViewModel", "onError", throwable)
-                         addLog("Request failed: ${throwable.message}")
-                         if (continuation.isActive) {
-                             if (throwable is CancellationException) {
+                            // Resume continuation first; resetConversation runs after the
+                            // suspendCancellableCoroutine block returns (in coroutine context)
+                            // to avoid calling conversation.close() from within its own callback.
+                            if (continuation.isActive) {
                                  continuation.resumeWith(Result.success(sb.toString()))
-                             } else {
-                                 continuation.resumeWith(Result.failure(throwable))
+                            }
+                        }
+
+                        override fun onError(throwable: Throwable) {
+                             Log.e("ServeTaskViewModel", "onError", throwable)
+                             addLog("Request failed: ${throwable.message}")
+                             if (continuation.isActive) {
+                                 if (throwable is CancellationException) {
+                                     continuation.resumeWith(Result.success(sb.toString()))
+                                 } else {
+                                     continuation.resumeWith(Result.failure(throwable))
+                                 }
                              }
-                         }
+                        }
                     }
-                }
+                )
+            }
+        } finally {
+            // Reset conversation after inference completes (or on cancellation) to release memory.
+            // Done here rather than inside onDone() to avoid calling conversation.close() from
+            // within the conversation's own callback, which can cause a reentrancy deadlock.
+            LlmChatModelHelper.resetConversation(
+                model = model,
+                supportImage = model.llmSupportImage,
+                supportAudio = model.llmSupportAudio
             )
         }
+
+        result
     }
 
     private fun Bitmap.toPngByteArray(): ByteArray {
