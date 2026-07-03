@@ -98,7 +98,7 @@ fun ServeTaskScreen(
     Spacer(modifier = Modifier.height(16.dp))
 
     // System prompt section – allows configuring a default system instruction for the server.
-    // When an API request includes its own system message that overrides this value.
+    // When an API request includes its own system message, that overrides this value.
     Text("System Prompt (used when API request has no system message):",
       style = MaterialTheme.typography.titleSmall)
     Spacer(modifier = Modifier.height(4.dp))

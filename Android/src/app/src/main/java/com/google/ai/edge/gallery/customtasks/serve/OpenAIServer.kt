@@ -115,26 +115,26 @@ class OpenAIServer(
             // ""    → API caller sent a system message with empty content; no system instruction.
             // other → use the extracted text as the system instruction.
             var systemInstructionText: String? = null
-            val systemInstructions = StringBuilder()
+            val systemInstructionBuilder = StringBuilder()
             for (i in 0 until messages.length()) {
                 val message = messages.getJSONObject(i)
                 if (message.getString("role") == "system") {
                     systemInstructionText = "" // mark that we found at least one system message
                     val content = message.get("content")
                     if (content is String) {
-                        systemInstructions.append(content).append("\n")
+                        systemInstructionBuilder.append(content).append("\n")
                     } else if (content is JSONArray) {
                         for (j in 0 until content.length()) {
                             val item = content.getJSONObject(j)
                             if (item.getString("type") == "text") {
-                                systemInstructions.append(item.getString("text")).append("\n")
+                                systemInstructionBuilder.append(item.getString("text")).append("\n")
                             }
                         }
                     }
                 }
             }
             if (systemInstructionText != null) {
-                systemInstructionText = systemInstructions.toString().trimEnd()
+                systemInstructionText = systemInstructionBuilder.toString().trimEnd()
             }
 
             // Iterate over all messages to support multi-turn history.
