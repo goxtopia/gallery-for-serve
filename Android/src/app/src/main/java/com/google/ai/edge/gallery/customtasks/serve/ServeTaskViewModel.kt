@@ -20,44 +20,68 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.ai.edge.gallery.customtasks.common.CustomTaskData
+import com.google.ai.edge.gallery.common.SystemPromptHelper
+import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.Model
+import com.google.ai.edge.gallery.data.SystemPromptRepository
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.ui.llmchat.LlmChatModelHelper
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.ByteArrayOutputStream
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Collections
+import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import com.google.ai.edge.litertlm.ExperimentalApi
-import com.google.ai.edge.litertlm.Message
-import com.google.ai.edge.litertlm.MessageCallback
-import com.google.ai.edge.litertlm.Content
-import com.google.ai.edge.gallery.ui.llmchat.LlmModelInstance
-import java.io.ByteArrayOutputStream
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import java.util.Collections
-import java.util.concurrent.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.google.ai.edge.gallery.ui.llmchat.LlmModelInstance
+
+const val SERVE_TASK_ID = "serve"
 
 data class ServeTaskUiState(
     val isServerRunning: Boolean = false,
     val port: Int = 8080,
     val logs: List<String> = emptyList(),
-    val serverAddress: String = ""
+    val serverAddress: String = "",
+    val systemPrompt: String = "",
 )
 
 @HiltViewModel
-class ServeTaskViewModel @Inject constructor() : ViewModel() {
+class ServeTaskViewModel @Inject constructor(
+    private val systemPromptRepository: SystemPromptRepository,
+) : ViewModel() {
     private val _uiState = MutableStateFlow(ServeTaskUiState())
     val uiState = _uiState.asStateFlow()
     private var server: OpenAIServer? = null
     private val mutex = Mutex()
+
+    /** Loads the effective system prompt (user-saved or task default) for the serve task. */
+    fun loadSystemPrompt(task: Task) {
+        viewModelScope.launch {
+            val prompt = SystemPromptHelper.getEffectiveSystemPrompt(systemPromptRepository, task)
+            _uiState.update { it.copy(systemPrompt = prompt) }
+        }
+    }
+
+    /** Saves a new system prompt for the serve task and updates the UI state. */
+    fun saveSystemPrompt(newPrompt: String) {
+        _uiState.update { it.copy(systemPrompt = newPrompt) }
+        viewModelScope.launch {
+            systemPromptRepository.updateSystemPrompt(SERVE_TASK_ID, newPrompt)
+        }
+    }
 
     fun toggleServer(
         context: Context,
@@ -158,6 +182,9 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
         prompt: String,
         images: List<Bitmap> = emptyList(),
         maxTokens: Int = -1,
+        // System instruction text from the API request. When null the configured system prompt is
+        // used; when empty string it means the API caller explicitly sent no system message.
+        systemInstructionText: String? = null,
         onPartialResult: (String) -> Unit
     ): String = mutex.withLock {
         val startTs = System.currentTimeMillis()
@@ -173,12 +200,30 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
             kotlinx.coroutines.delay(100)
         }
 
-        // Reset conversation to avoid state accumulation
+        // Determine the effective system instruction:
+        //  - Use the API request's system message when the caller supplied one (including empty).
+        //  - Fall back to the user-configured system prompt when the caller omitted it (null).
+        val effectiveSystemInstruction: Contents? = when {
+            systemInstructionText != null -> {
+                if (systemInstructionText.isNotEmpty()) Contents.of(systemInstructionText) else null
+            }
+            uiState.value.systemPrompt.isNotEmpty() -> Contents.of(uiState.value.systemPrompt)
+            else -> null
+        }
+
+        // Reset conversation to avoid state accumulation, applying the system instruction.
         LlmChatModelHelper.resetConversation(
             model = model,
             supportImage = model.llmSupportImage,
-            supportAudio = model.llmSupportAudio
+            supportAudio = model.llmSupportAudio,
+            systemInstruction = effectiveSystemInstruction,
         )
+
+        // Check whether thinking mode is enabled for this model.
+        val enableThinking =
+            model.getBooleanConfigValue(key = ConfigKeys.ENABLE_THINKING, defaultValue = false)
+        val extraContext: Map<String, String> =
+            if (enableThinking) mapOf("enable_thinking" to "true") else emptyMap()
 
         val instance = model.instance as LlmModelInstance
         val conversation = instance.conversation
@@ -197,7 +242,7 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
                 var tokenCount = 0
 
                 conversation.sendMessageAsync(
-                    Message.of(contents),
+                    Contents.of(contents),
                     object : MessageCallback {
                         override fun onMessage(message: Message) {
                             val content = message.toString()
@@ -242,7 +287,8 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
                                  }
                              }
                         }
-                    }
+                    },
+                    extraContext,
                 )
             }
         } finally {
@@ -252,7 +298,7 @@ class ServeTaskViewModel @Inject constructor() : ViewModel() {
             LlmChatModelHelper.resetConversation(
                 model = model,
                 supportImage = model.llmSupportImage,
-                supportAudio = model.llmSupportAudio
+                supportAudio = model.llmSupportAudio,
             )
         }
 

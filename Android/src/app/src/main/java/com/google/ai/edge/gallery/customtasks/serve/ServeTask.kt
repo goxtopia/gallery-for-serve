@@ -80,6 +80,9 @@ class ServeTask @Inject constructor() : CustomTask {
   @Composable
   override fun MainScreen(data: Any) {
     val customTaskData = data as CustomTaskData
-    ServeTaskScreen(modelManagerViewModel = customTaskData.modelManagerViewModel)
+    ServeTaskScreen(
+      modelManagerViewModel = customTaskData.modelManagerViewModel,
+      task = task,
+    )
   }
 }

@@ -10,7 +10,10 @@
       "commitHash": "6e5c4f1e395deb959c494953478fa5cec4b8008f",
       "llmSupportImage": true,
       "llmSupportAudio": true,
-      "capabilities": ["llm_thinking", "speculative_decoding"],
+      "capabilities": [
+        "llm_thinking",
+        "speculative_decoding"
+      ],
       "defaultConfig": {
         "topK": 64,
         "topP": 0.95,
@@ -35,8 +38,19 @@
         "llm_ask_audio"
       ],
       "capabilityToTaskTypes": {
-        "llm_thinking": ["llm_chat", "llm_ask_image", "llm_ask_audio"],
-        "speculative_decoding": ["llm_chat", "llm_ask_image", "llm_ask_audio", "llm_prompt_lab"]
+        "llm_thinking": [
+          "llm_chat",
+          "llm_ask_image",
+          "llm_ask_audio",
+          "serve"
+        ],
+        "speculative_decoding": [
+          "llm_chat",
+          "llm_ask_image",
+          "llm_ask_audio",
+          "llm_prompt_lab",
+          "serve"
+        ]
       },
       "updatableModelFiles": [
         {
@@ -56,7 +70,10 @@
       "commitHash": "28299f30ee4d43294517a4ac93abd6163412f07f",
       "llmSupportImage": true,
       "llmSupportAudio": true,
-      "capabilities": ["llm_thinking", "speculative_decoding"],
+      "capabilities": [
+        "llm_thinking",
+        "speculative_decoding"
+      ],
       "defaultConfig": {
         "topK": 64,
         "topP": 0.95,
@@ -81,8 +98,19 @@
         "llm_ask_audio"
       ],
       "capabilityToTaskTypes": {
-        "llm_thinking": ["llm_chat", "llm_ask_image", "llm_ask_audio"],
-        "speculative_decoding": ["llm_chat", "llm_ask_image", "llm_ask_audio", "llm_prompt_lab"]
+        "llm_thinking": [
+          "llm_chat",
+          "llm_ask_image",
+          "llm_ask_audio",
+          "serve"
+        ],
+        "speculative_decoding": [
+          "llm_chat",
+          "llm_ask_image",
+          "llm_ask_audio",
+          "llm_prompt_lab",
+          "serve"
+        ]
       },
       "updatableModelFiles": [
         {
@@ -109,8 +137,16 @@
         "maxTokens": 4096,
         "accelerators": "cpu,gpu"
       },
-      "taskTypes": ["llm_chat", "llm_prompt_lab", "llm_ask_image", "llm_ask_audio"],
-      "bestForTaskTypes": ["llm_ask_image", "llm_ask_audio"]
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab",
+        "llm_ask_image",
+        "llm_ask_audio"
+      ],
+      "bestForTaskTypes": [
+        "llm_ask_image",
+        "llm_ask_audio"
+      ]
     },
     {
       "name": "Gemma-3n-E4B-it",
@@ -129,7 +165,12 @@
         "maxTokens": 4096,
         "accelerators": "cpu,gpu"
       },
-      "taskTypes": ["llm_chat", "llm_prompt_lab", "llm_ask_image", "llm_ask_audio"]
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab",
+        "llm_ask_image",
+        "llm_ask_audio"
+      ]
     },
     {
       "name": "Gemma3-1B-IT",
@@ -146,8 +187,14 @@
         "maxTokens": 1024,
         "accelerators": "gpu,cpu"
       },
-      "taskTypes": ["llm_chat", "llm_prompt_lab"],
-      "bestForTaskTypes": ["llm_chat", "llm_prompt_lab"]
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab"
+      ],
+      "bestForTaskTypes": [
+        "llm_chat",
+        "llm_prompt_lab"
+      ]
     },
     {
       "name": "Qwen2.5-1.5B-Instruct",
@@ -164,7 +211,10 @@
         "maxTokens": 4096,
         "accelerators": "gpu,cpu"
       },
-      "taskTypes": ["llm_chat", "llm_prompt_lab"]
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab"
+      ]
     },
     {
       "name": "DeepSeek-R1-Distill-Qwen-1.5B",
@@ -181,7 +231,10 @@
         "maxTokens": 4096,
         "accelerators": "gpu,cpu"
       },
-      "taskTypes": ["llm_chat", "llm_prompt_lab"]
+      "taskTypes": [
+        "llm_chat",
+        "llm_prompt_lab"
+      ]
     },
     {
       "name": "TinyGarden-270M",

@@ -110,29 +110,34 @@ class OpenAIServer(
             var prompt = ""
             val images = mutableListOf<Bitmap>()
 
-            var systemInstructions = ""
+            // Extract system message from the request.
+            // null  → no system message in request; fall back to the configured system prompt.
+            // ""    → API caller sent a system message with empty content; no system instruction.
+            // other → use the extracted text as the system instruction.
+            var systemInstructionText: String? = null
+            val systemInstructionBuilder = StringBuilder()
             for (i in 0 until messages.length()) {
                 val message = messages.getJSONObject(i)
                 if (message.getString("role") == "system") {
+                    systemInstructionText = "" // mark that we found at least one system message
                     val content = message.get("content")
                     if (content is String) {
-                        systemInstructions += content + "\n"
+                        systemInstructionBuilder.append(content).append("\n")
                     } else if (content is JSONArray) {
                         for (j in 0 until content.length()) {
                             val item = content.getJSONObject(j)
                             if (item.getString("type") == "text") {
-                                systemInstructions += item.getString("text") + "\n"
+                                systemInstructionBuilder.append(item.getString("text")).append("\n")
                             }
                         }
                     }
                 }
             }
+            if (systemInstructionText != null) {
+                systemInstructionText = systemInstructionBuilder.toString().trimEnd()
+            }
 
             // Iterate over all messages to support multi-turn history.
-            // We append each message to the prompt. If it's a user message, we append the content.
-            // If it's an assistant message, we append it as context.
-            var isFirstUserMessage = true
-
             for (i in 0 until messages.length()) {
                 val message = messages.getJSONObject(i)
                 val role = message.getString("role")
@@ -164,21 +169,10 @@ class OpenAIServer(
                 }
 
                 if (role == "user") {
-                    if (isFirstUserMessage && systemInstructions.isNotEmpty()) {
-                        prompt += "System instructions:\n$systemInstructions\nUser:\n$messageText\n"
-                        isFirstUserMessage = false
-                    } else {
-                        prompt += "User:\n$messageText\n"
-                        isFirstUserMessage = false
-                    }
+                    prompt += "User:\n$messageText\n"
                 } else if (role == "assistant") {
                     prompt += "Assistant:\n$messageText\n"
                 }
-            }
-
-            // if no user message was provided but we have system instructions
-            if (isFirstUserMessage && systemInstructions.isNotEmpty()) {
-                prompt = "System instructions:\n$systemInstructions\n" + prompt
             }
 
             // Ensure model is selected
@@ -198,7 +192,7 @@ class OpenAIServer(
 
                 scope.launch(Dispatchers.IO) {
                     try {
-                        serveTaskViewModel.generateResponse(model, prompt, images, maxTokens) { partialText ->
+                        serveTaskViewModel.generateResponse(model, prompt, images, maxTokens, systemInstructionText) { partialText ->
                             val chunk = createOpenAIChunk(responseId, created, modelName, partialText)
                             val data = "data: $chunk\n\n".toByteArray(Charsets.UTF_8)
                             queue.put(data)
@@ -272,7 +266,7 @@ class OpenAIServer(
                     // connection, and the Mutex in generateResponse serialises inference to one
                     // request at a time, so blocking this thread while waiting is fine.
                     responseContent = runBlocking {
-                        serveTaskViewModel.generateResponse(model, prompt, images, maxTokens) { _ -> }
+                        serveTaskViewModel.generateResponse(model, prompt, images, maxTokens, systemInstructionText) { _ -> }
                     }
                 } catch (e: Exception) {
                     error = e.message
