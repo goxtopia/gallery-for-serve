@@ -24,6 +24,7 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedWriter
@@ -259,27 +260,23 @@ class OpenAIServer(
 
                 val response = newChunkedResponse(Response.Status.OK, "text/event-stream", inputStream)
                 response.addHeader("Cache-Control", "no-cache")
+                response.addHeader("Connection", "close")
                 return response
             } else {
                 // Non-streaming
                 var responseContent = ""
                 var error: String? = null
 
-                // Blocking call to get response
-                val job = scope.launch(Dispatchers.IO) {
-                   try {
-                       responseContent = serveTaskViewModel.generateResponse(model, prompt, images, maxTokens) { partial ->
-                           // Ignore partial results
-                       }
-                   } catch (e: Exception) {
-                       error = e.message
-                       Log.e(TAG, "Inference error", e)
-                   }
-                }
-
-                // Wait for job to complete.
-                while (!job.isCompleted) {
-                    Thread.sleep(100)
+                try {
+                    // runBlocking is intentional here: NanoHTTPD dedicates one thread per
+                    // connection, and the Mutex in generateResponse serialises inference to one
+                    // request at a time, so blocking this thread while waiting is fine.
+                    responseContent = runBlocking {
+                        serveTaskViewModel.generateResponse(model, prompt, images, maxTokens) { _ -> }
+                    }
+                } catch (e: Exception) {
+                    error = e.message
+                    Log.e(TAG, "Inference error", e)
                 }
 
                 if (error != null) {
@@ -310,7 +307,9 @@ class OpenAIServer(
                 usage.put("total_tokens", (prompt.length + responseContent.length) / 4)
                 response.put("usage", usage)
 
-                return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+                val httpResponse = newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+                httpResponse.addHeader("Connection", "close")
+                return httpResponse
             }
 
         } catch (e: Exception) {
